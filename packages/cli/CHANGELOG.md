@@ -1,5 +1,11 @@
 # @backstage/cli
 
+## 0.6.6
+
+### Patch Changes
+
+- 4d248725e: Make the backend plugin template use the correct latest version of `express-promise-router`
+
 ## 0.6.5
 
 ### Patch Changes
