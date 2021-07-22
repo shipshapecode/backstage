@@ -19,6 +19,7 @@ import { EntityName } from '@backstage/catalog-model';
 import { DiscoveryApi, IdentityApi, OAuthApi } from '@backstage/core';
 import {
   GitHubIntegrationConfig,
+  GitLabIntegrationConfig,
   ScmIntegrationRegistry,
 } from '@backstage/integration';
 import { Base64 } from 'js-base64';
@@ -26,23 +27,28 @@ import { Octokit } from '@octokit/rest';
 import { PartialEntity } from '../types';
 import { AnalyzeResult, CatalogImportApi } from './CatalogImportApi';
 import { getGithubIntegrationConfig } from './GitHub';
+import { getGitlabIntegrationConfig } from './GitLab';
+import parseGitUrl from 'git-url-parse';
 
 export class CatalogImportClient implements CatalogImportApi {
   private readonly discoveryApi: DiscoveryApi;
   private readonly identityApi: IdentityApi;
   private readonly githubAuthApi: OAuthApi;
+  private readonly gitlabAuthApi: OAuthApi;
   private readonly scmIntegrationsApi: ScmIntegrationRegistry;
   private readonly catalogApi: CatalogApi;
 
   constructor(options: {
     discoveryApi: DiscoveryApi;
     githubAuthApi: OAuthApi;
+    gitlabAuthApi: OAuthApi;
     identityApi: IdentityApi;
     scmIntegrationsApi: ScmIntegrationRegistry;
     catalogApi: CatalogApi;
   }) {
     this.discoveryApi = options.discoveryApi;
     this.githubAuthApi = options.githubAuthApi;
+    this.gitlabAuthApi = options.gitlabAuthApi;
     this.identityApi = options.identityApi;
     this.scmIntegrationsApi = options.scmIntegrationsApi;
     this.catalogApi = options.catalogApi;
@@ -71,29 +77,53 @@ export class CatalogImportClient implements CatalogImportApi {
       };
     }
 
-    const ghConfig = getGithubIntegrationConfig(this.scmIntegrationsApi, url);
-    if (!ghConfig) {
-      throw new Error(
-        'This URL was not recognized as a valid GitHub URL because there was no configured integration that matched the given host name. You could try to paste the full URL to a catalog-info.yaml file instead.',
+    const { source } = parseGitUrl(url);
+    if (source === 'gitlab.com') {
+      const gitConfig = getGitlabIntegrationConfig(
+        this.scmIntegrationsApi,
+        url,
       );
+      if (!gitConfig) {
+        throw new Error(
+          'This URL was not recognized as a valid GitHub URL because there was no configured integration that matched the given host name. You could try to paste the full URL to a catalog-info.yaml file instead.',
+        );
+      }
+      const locations = await this.checkGitLabForExistingCatalogInfo({
+        ...gitConfig,
+        url,
+      });
+      if (locations.length > 0) {
+        return {
+          type: 'locations',
+          locations,
+        };
+      }
     }
-
-    // TODO: this could be part of the analyze-location endpoint
-    const locations = await this.checkGitHubForExistingCatalogInfo({
-      ...ghConfig,
-      url,
-    });
-
-    if (locations.length > 0) {
-      return {
-        type: 'locations',
-        locations,
-      };
+    if (source === 'github.com') {
+      const gitConfig = getGithubIntegrationConfig(
+        this.scmIntegrationsApi,
+        url,
+      );
+      if (!gitConfig) {
+        throw new Error(
+          'This URL was not recognized as a valid GitHub URL because there was no configured integration that matched the given host name. You could try to paste the full URL to a catalog-info.yaml file instead.',
+        );
+      }
+      const locations = await this.checkGitHubForExistingCatalogInfo({
+        ...gitConfig,
+        url,
+      });
+      if (locations.length > 0) {
+        return {
+          type: 'locations',
+          locations,
+        };
+      }
     }
 
     return {
       type: 'repository',
-      integrationType: 'github',
+      integrationType: source.substr(0, source.lastIndexOf('.')),
       url: url,
       generatedEntities: await this.generateEntityDefinitions({
         repo: url,
@@ -182,6 +212,77 @@ export class CatalogImportClient implements CatalogImportApi {
     const octo = new Octokit({
       auth: token,
       baseUrl: githubIntegrationConfig.apiBaseUrl,
+    });
+    const catalogFileName = 'catalog-info.yaml';
+    const query = `repo:${owner}/${repo}+filename:${catalogFileName}`;
+
+    const searchResult = await octo.search.code({ q: query }).catch(e => {
+      throw new Error(
+        formatHttpErrorMessage(
+          "Couldn't search repository for metadata file.",
+          e,
+        ),
+      );
+    });
+    const exists = searchResult.data.total_count > 0;
+    if (exists) {
+      const repoInformation = await octo.repos.get({ owner, repo }).catch(e => {
+        throw new Error(formatHttpErrorMessage("Couldn't fetch repo data", e));
+      });
+      const defaultBranch = repoInformation.data.default_branch;
+
+      return await Promise.all(
+        searchResult.data.items
+          .map(
+            i => `${url.replace(/[\/]*$/, '')}/blob/${defaultBranch}/${i.path}`,
+          )
+          .map(
+            async i =>
+              ({
+                target: i,
+                entities: (
+                  await this.catalogApi.addLocation({
+                    type: 'url',
+                    target: i,
+                    dryRun: true,
+                  })
+                ).entities.map(e => ({
+                  kind: e.kind,
+                  namespace: e.metadata.namespace ?? 'default',
+                  name: e.metadata.name,
+                })),
+              } as {
+                target: string;
+                entities: EntityName[];
+              }),
+          ),
+      );
+    }
+
+    return [];
+  }
+
+  // TODO: this response should better be part of the analyze-locations response and scm-independent / implemented per scm
+  private async checkGitLabForExistingCatalogInfo({
+    url,
+    owner,
+    repo,
+    gitlabIntegrationConfig,
+  }: {
+    url: string;
+    owner: string;
+    repo: string;
+    gitlabIntegrationConfig: GitLabIntegrationConfig;
+  }): Promise<
+    Array<{
+      target: string;
+      entities: EntityName[];
+    }>
+  > {
+    const token = await this.gitlabAuthApi.getAccessToken(['repo']);
+    const octo = new Octokit({
+      auth: token,
+      baseUrl: gitlabIntegrationConfig.apiBaseUrl,
     });
     const catalogFileName = 'catalog-info.yaml';
     const query = `repo:${owner}/${repo}+filename:${catalogFileName}`;

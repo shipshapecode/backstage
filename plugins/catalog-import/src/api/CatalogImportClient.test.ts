@@ -50,6 +50,9 @@ jest.doMock('@octokit/rest', () => {
 jest.mock('./GitHub', () => ({
   getGithubIntegrationConfig: jest.fn(),
 }));
+jest.mock('./GitLab', () => ({
+  getGitlabIntegrationConfig: jest.fn(),
+}));
 
 import { ConfigReader, OAuthApi, UrlPatternDiscovery } from '@backstage/core';
 import {
@@ -73,6 +76,9 @@ describe('CatalogImportClient', () => {
   const discoveryApi = UrlPatternDiscovery.compile(mockBaseUrl);
 
   const githubAuthApi: jest.Mocked<OAuthApi> = {
+    getAccessToken: jest.fn(),
+  };
+  const gitlabAuthApi: jest.Mocked<OAuthApi> = {
     getAccessToken: jest.fn(),
   };
   const identityApi = {
@@ -109,6 +115,7 @@ describe('CatalogImportClient', () => {
   beforeEach(() => {
     catalogImportClient = new CatalogImportClient({
       discoveryApi,
+      gitlabAuthApi,
       githubAuthApi,
       scmIntegrationsApi,
       identityApi,

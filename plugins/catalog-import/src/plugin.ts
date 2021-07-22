@@ -21,6 +21,7 @@ import {
   createRouteRef,
   discoveryApiRef,
   githubAuthApiRef,
+  gitlabAuthApiRef,
   identityApiRef,
 } from '@backstage/core';
 import { scmIntegrationsApiRef } from '@backstage/integration-react';
@@ -40,6 +41,7 @@ export const catalogImportPlugin = createPlugin({
       deps: {
         discoveryApi: discoveryApiRef,
         githubAuthApi: githubAuthApiRef,
+        gitlabAuthApi: gitlabAuthApiRef,
         identityApi: identityApiRef,
         scmIntegrationsApi: scmIntegrationsApiRef,
         catalogApi: catalogApiRef,
@@ -47,6 +49,7 @@ export const catalogImportPlugin = createPlugin({
       factory: ({
         discoveryApi,
         githubAuthApi,
+        gitlabAuthApi,
         identityApi,
         scmIntegrationsApi,
         catalogApi,
@@ -54,6 +57,7 @@ export const catalogImportPlugin = createPlugin({
         new CatalogImportClient({
           discoveryApi,
           githubAuthApi,
+          gitlabAuthApi,
           scmIntegrationsApi,
           identityApi,
           catalogApi,
