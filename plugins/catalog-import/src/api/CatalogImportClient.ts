@@ -29,6 +29,7 @@ import { AnalyzeResult, CatalogImportApi } from './CatalogImportApi';
 import { getGithubIntegrationConfig } from './GitHub';
 import { getGitlabIntegrationConfig } from './GitLab';
 import parseGitUrl from 'git-url-parse';
+import { Gitlab } from '@gitbeaker/node';
 
 export class CatalogImportClient implements CatalogImportApi {
   private readonly discoveryApi: DiscoveryApi;
@@ -279,15 +280,17 @@ export class CatalogImportClient implements CatalogImportApi {
       entities: EntityName[];
     }>
   > {
-    const token = await this.gitlabAuthApi.getAccessToken(['repo']);
-    const octo = new Octokit({
-      auth: token,
-      baseUrl: gitlabIntegrationConfig.apiBaseUrl,
+    const token = await this.gitlabAuthApi.getAccessToken(['read_repository']);
+    const api = new Gitlab({
+      token: token,
     });
     const catalogFileName = 'catalog-info.yaml';
-    const query = `repo:${owner}/${repo}+filename:${catalogFileName}`;
+    const query = `filename:${catalogFileName}`;
 
-    const searchResult = await octo.search.code({ q: query }).catch(e => {
+    // TODO Having trouble here with search query not returning catalog-info.yaml
+    const searchResult = await api.Projects.search('Hello World', {
+      search: query,
+    }).catch(e => {
       throw new Error(
         formatHttpErrorMessage(
           "Couldn't search repository for metadata file.",
@@ -295,40 +298,42 @@ export class CatalogImportClient implements CatalogImportApi {
         ),
       );
     });
-    const exists = searchResult.data.total_count > 0;
-    if (exists) {
-      const repoInformation = await octo.repos.get({ owner, repo }).catch(e => {
-        throw new Error(formatHttpErrorMessage("Couldn't fetch repo data", e));
-      });
-      const defaultBranch = repoInformation.data.default_branch;
 
-      return await Promise.all(
-        searchResult.data.items
-          .map(
-            i => `${url.replace(/[\/]*$/, '')}/blob/${defaultBranch}/${i.path}`,
-          )
-          .map(
-            async i =>
-              ({
-                target: i,
-                entities: (
-                  await this.catalogApi.addLocation({
-                    type: 'url',
-                    target: i,
-                    dryRun: true,
-                  })
-                ).entities.map(e => ({
-                  kind: e.kind,
-                  namespace: e.metadata.namespace ?? 'default',
-                  name: e.metadata.name,
-                })),
-              } as {
-                target: string;
-                entities: EntityName[];
-              }),
-          ),
-      );
-    }
+    // TODO Code below copied from checkGitHubForExistingCatalogInfo and needs to be updated for GitLab
+    // const exists = searchResult.data.total_count > 0;
+    // if (exists) {
+    //   const repoInformation = await octo.repos.get({ owner, repo }).catch(e => {
+    //     throw new Error(formatHttpErrorMessage("Couldn't fetch repo data", e));
+    //   });
+    //   const defaultBranch = repoInformation.data.default_branch;
+    //
+    //   return await Promise.all(
+    //     searchResult.data.items
+    //       .map(
+    //         i => `${url.replace(/[\/]*$/, '')}/blob/${defaultBranch}/${i.path}`,
+    //       )
+    //       .map(
+    //         async i =>
+    //           ({
+    //             target: i,
+    //             entities: (
+    //               await this.catalogApi.addLocation({
+    //                 type: 'url',
+    //                 target: i,
+    //                 dryRun: true,
+    //               })
+    //             ).entities.map(e => ({
+    //               kind: e.kind,
+    //               namespace: e.metadata.namespace ?? 'default',
+    //               name: e.metadata.name,
+    //             })),
+    //           } as {
+    //             target: string;
+    //             entities: EntityName[];
+    //           }),
+    //       ),
+    //   );
+    // }
 
     return [];
   }

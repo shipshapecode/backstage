@@ -284,8 +284,8 @@ auth:
         enterpriseInstanceUrl: ${AUTH_GITHUB_ENTERPRISE_INSTANCE_URL}
     gitlab:
       development:
-        clientId: ${AUTH_GITLAB_CLIENT_ID}
-        clientSecret: ${AUTH_GITLAB_CLIENT_SECRET}
+        clientId: 'def9c290455a1e8a3e9fd20245dc3352f00d282197dd460cd1a31520d52f6d1a'
+        clientSecret: '6f99cb972223bf93cc50fa6d34e490150ed90094f0c5670035e9807286fa3098'
         audience: ${GITLAB_BASE_URL}
     saml:
       entryPoint: 'http://localhost:7001/'
